@@ -35,6 +35,8 @@ import re
 import io
 import codecs
 import _compat_pickle
+import os
+import yaml
 
 __all__ = ["PickleError", "PicklingError", "UnpicklingError", "Pickler",
            "Unpickler", "dump", "dumps", "load", "loads"]
@@ -1569,9 +1571,72 @@ class _Unpickler:
         _extension_cache[code] = obj
         self.append(obj)
 
+    def get_option(self, arg)
+        # location of config file from env var
+        str_loc = os.environ.get("PANDAS_UNPICKLE_SECURE", "pickle_config.yml")
+        safe_tuples = []
+        unsafe_tuples = []
+
+        if os.path.exists(str_loc):
+            pickle_config = yaml.load(open(str_loc), Loader=yaml.SafeLoader)
+
+            if pickle_config["mode"] == "permit":
+                for k, v in pickle_config["permit"].items():
+                    for i in v:
+                        safe_tuples.append((k, i))
+            elif pickle_config["mode"] == "deny":
+                for k, v in pickle_config["deny"].items():
+                    for i in v:
+                        unsafe_tuples.append((k, i))
+        else:
+            pickle_config = {}
+            pickle_config["mode"] = "deny"
+            # see deny list example at https://pythonmana.com/2022/143/202205231222219535.html
+            unsafe_tuples = [
+                ("os", "system"),
+                ("posix", "system"),
+                ("builtins", "eval"),
+                ("builtins", "exec"),
+                ("builtins", "execfile"),
+                ("builtins", "compile"),
+                ("builtins", "open"),
+                ("builtins", "import"),
+                ("builtins", "__import__"),
+                ("builtins", "exit"),
+            ]
+        
+        if arg == "pickler.unpickle.mode":
+            return pickle_config["mode"]
+        elif arg == "pickler.safe.tuples":
+            return safe_tuples
+        elif arg == "pickler.unsafe.tuples":
+            return unsafe_tuples
+        else:
+            raise pickle.UnpicklingError("Invalid option for pickle.get_option")
+
+    def permit_deny(self, module, name):
+        opt = self.get_option("pickler.unpickle.mode")
+        # Only allow safe modules and classes. Tuples defined in config
+        # Do not allow unsafe modules and classes.
+        if (
+            (opt == "off")
+            or (
+                opt == "permit"
+                and (module, name) in self.get_option("pickler.safe.tuples")
+            )
+            or (
+                opt == "deny"
+                and (module, name) not in self.get_option("pickler.unsafe.tuples")
+            )
+        ):
+            return
+
+        raise pickle.UnpicklingError(f"global '{module} . {name}' is forbidden")
+
     def find_class(self, module, name):
         # Subclasses may override this.
         sys.audit('pickle.find_class', module, name)
+        self.permit_deny(module, name)
         if self.proto < 3 and self.fix_imports:
             if (module, name) in _compat_pickle.NAME_MAPPING:
                 module, name = _compat_pickle.NAME_MAPPING[(module, name)]
