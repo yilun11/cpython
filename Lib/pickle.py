@@ -1189,7 +1189,6 @@ class _Unpickler:
         """Read a pickled object representation from the open file.
 
         Return the reconstituted object hierarchy specified in the file.
-        Yilun
         """
         # Check whether Unpickler was initialized correctly. This is
         # only needed to mimic the behavior of _pickle.Unpickler.dump().
