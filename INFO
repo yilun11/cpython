@@ -1,0 +1,27 @@
+This is to handle open CVEs related to pickle - https://nvd.nist.gov/vuln/search/results?form_type=Basic&results_type=overview&query=Python+pickle&search_type=all&isCpeNameSearch=false
+
+Python version is implemented, C version is not yet implemented.
+Originally I planned for YAML config file but may have to use the configparser or C analog.
+
+Test example:
+
+import os
+import pickle
+
+class MyEvilPickle:
+    def __reduce__(self):
+        return (os.system, ("whoami",))
+
+pickle_data = pickle.dumps(MyEvilPickle())
+# storing the serialized output into a file in current directory
+path = "evil.pkl"
+with open(path, "wb") as file:
+    file.write(pickle_data)
+
+# file.close() is flaky so maybe run more than once
+file.close()
+
+# using Python load instead of C module for load
+pickle._load(open(path, "rb"))
+
+# this will raise an error
