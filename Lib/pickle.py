@@ -36,7 +36,6 @@ import io
 import codecs
 import _compat_pickle
 import os
-import yaml
 
 __all__ = ["PickleError", "PicklingError", "UnpicklingError", "Pickler",
            "Unpickler", "dump", "dumps", "load", "loads"]
@@ -1190,6 +1189,7 @@ class _Unpickler:
         """Read a pickled object representation from the open file.
 
         Return the reconstituted object hierarchy specified in the file.
+        Yilun
         """
         # Check whether Unpickler was initialized correctly. This is
         # only needed to mimic the behavior of _pickle.Unpickler.dump().
@@ -1571,13 +1571,14 @@ class _Unpickler:
         _extension_cache[code] = obj
         self.append(obj)
 
-    def get_option(self, arg)
+    def get_option(self, arg):
         # location of config file from env var
         str_loc = os.environ.get("PANDAS_UNPICKLE_SECURE", "pickle_config.yml")
         safe_tuples = []
         unsafe_tuples = []
 
         if os.path.exists(str_loc):
+            # rewrite using configparser
             pickle_config = yaml.load(open(str_loc), Loader=yaml.SafeLoader)
 
             if pickle_config["mode"] == "permit":
@@ -1604,7 +1605,6 @@ class _Unpickler:
                 ("builtins", "__import__"),
                 ("builtins", "exit"),
             ]
-        
         if arg == "pickler.unpickle.mode":
             return pickle_config["mode"]
         elif arg == "pickler.safe.tuples":
@@ -1612,7 +1612,7 @@ class _Unpickler:
         elif arg == "pickler.unsafe.tuples":
             return unsafe_tuples
         else:
-            raise pickle.UnpicklingError("Invalid option for pickle.get_option")
+            raise UnpicklingError("Invalid option for pickle.get_option")
 
     def permit_deny(self, module, name):
         opt = self.get_option("pickler.unpickle.mode")
@@ -1631,7 +1631,7 @@ class _Unpickler:
         ):
             return
 
-        raise pickle.UnpicklingError(f"global '{module} . {name}' is forbidden")
+        raise UnpicklingError(f"global '{module} . {name}' is forbidden")
 
     def find_class(self, module, name):
         # Subclasses may override this.
