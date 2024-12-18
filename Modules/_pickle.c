@@ -6995,6 +6995,146 @@ _pickle_Unpickler_load_impl(UnpicklerObject *self)
     return load(unpickler);
 }
 
+/* some defs needed to add protection to find_class */
+
+#define UNPICKLING_ERROR 1
+
+typedef struct {
+  char* module;
+  char* name;
+} Tuple;
+
+Tuple* safe_tuples = NULL;
+int safe_tuples_size = 0;
+
+Tuple* unsafe_tuples = NULL;
+int unsafe_tuples_size = 0;
+
+char* pickle_mode = NULL;
+
+bool file_exists(char* filename) {
+  struct stat buffer;
+  return (stat(filename, &buffer) == 0);
+  }
+
+void read_config() {
+  char* str_loc = getenv("PANDAS_UNPICKLE_SECURE");
+  if (str_loc == NULL) {
+    str_loc = "pickle_config.yml";
+  }
+  
+  if (file_exists(str_loc)) {
+    /* not supported yet
+    FILE* config_file = fopen(str_loc, "r");
+    yaml_parser_t parser;
+    yaml_event_t  event;
+    
+    if (!yaml_parser_initialize(&parser)) {
+      fputs("Failed to initialize parser!\n", stderr);
+      exit(1);
+    }
+    
+    yaml_parser_set_input_file(&parser, config_file);
+    
+    char* key = NULL;
+    while (true) {
+      if (!yaml_parser_parse(&parser, &event)) {
+        fputs("Parser error\n", stderr);
+        exit(1);
+      }
+      
+      ifevent.type == YAML_MAPPING_END_EVENT) {
+        break;
+        }
+        
+        if (event.type == YAML_SCALAR_EVENT) {
+          if (key == NULL) key = strdup((char*)event.data.scalar.value);
+        } else {
+          // assume value
+          if (strcmp(key, "mode") == ) {
+            pickle_mode strdup((char*)event.data.value);
+          }
+          key = NULL;
+        }
+    }
+    
+    yaml_event_delete(&event);
+  }
+  
+  yaml_parser_delete(&parser);
+  fclose(config_file);
+  
+  // Process tuples here if needed...
+     */
+  }
+else {
+  pickle_mode = "deny";
+  unsafe_tuples_size = 9;
+  unsafe_tuples = malloc(unsafe_tuples_size * sizeof(Tuple));
+  unsafe_tuples[0] = (Tuple){"os", "system"};
+  unsafe_tuples[1] = (Tuple){"posix", "system"};
+  unsafe_tuples[2] = (Tuple){"builtins", "eval"};
+  unsafe_tuples[3] = (Tuple){"ins", "exec"};
+  unsafe_tuples[4] = (Tuple){"builtins", "execfile"};
+  unsafe_tuples[5] = (Tuple){"builtins", "compile"};
+  unsafe_tuples[6] = (Tuple){"builtins", "open"};
+  unsafe_tuples[7] = (Tuple){"builtins", "import"};
+  unsafe_tuples[8] = (Tuple){"ins", "__import__"};
+  unsafe_tuples[9] = (Tuple){"builtins", "exit"};
+}
+}
+
+char* get_option(const char* arg) {
+  if (pickle_mode == NULL) {
+    read_config();
+  }
+  
+  if (strcmp(arg, "pickler.unpickle.mode") == 0) {
+    return pickle_mode;
+  } else if (strcmp(arg, "pickler.safe.tuples") == 0) {
+    return (char*)safe_tuples; // unsafe cast to char* from Tuple*
+  } else if (strcmp(arg, "pickler.unsafe.tuples") == 0) {
+    return (char*)unsafe_tuples; // unsafe cast to char* from Tuple*
+  } else {
+    fprintf(stderr, "Invalid option for pickle.get_option\n");
+    exit(UNPICKLING_ERROR);
+  }
+  
+  return NULL;
+}
+
+void permit_deny(const char* module, const char* name) {
+  char* opt = get_option("pickler.unpickle.mode");
+  bool found = false;
+  
+  if (strcmp(opt, "off") == 0) {
+    return;
+  }
+  
+  if (strcmp(opt, "permit") == 0) {
+    for (int i = 0; i < safe_tuples_size; i++) {
+      if (strcmp(safe_tuples[i].module, module) == 0 && strcmp(safe_tuples[i].name, name) == 0) {
+        found = true;
+        break;
+      }
+    }
+  } else if (strcmp(opt, "deny") == 0) {
+    found = true;
+    for (int i = 0; i < unsafe_tuples_size; i++) {
+      if (strcmp(unsafe_tuples[i].module, module) == 0 && strcmp(unsafe_tuples[i].name, name) == 0) {
+        found = false;
+        break;
+      }
+    }
+  }
+  
+  if (!found) {
+    fprintf(stderr, "Unpickling Error: global '%s.%s' is forbidden\n", module, name);
+    exit(UNPICKLING_ERROR);
+  }
+}
+/* end defs for find_class */
+
 /* The name of find_class() is misleading. In newer pickle protocols, this
    function is used for loading any global (i.e., functions), not just
    classes. The name is kept only for backward compatibility. */
@@ -7030,6 +7170,8 @@ _pickle_Unpickler_find_class_impl(UnpicklerObject *self,
                     module_name, global_name) < 0) {
         return NULL;
     }
+
+    permit_deny(PyUnicode_AsUTF8(module_name), PyUnicode_AsUTF8(global_name));
 
     /* Try to map the old names used in Python 2.x to the new ones used in
        Python 3.x.  We do this only with old pickle protocols and when the
